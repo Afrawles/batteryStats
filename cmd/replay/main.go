@@ -102,7 +102,8 @@ func main() {
 		f, err := os.OpenFile(v, os.O_RDONLY, 0o400)
 
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
+			continue
 		}
 		defer f.Close()
 
@@ -200,7 +201,8 @@ func main() {
 			}
 
 			if err != nil {
-				log.Fatal(err)
+				fmt.Println(err)
+				continue
 			}
 
 		}
