@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -152,3 +151,4 @@ func main() {
 	}
 
 }
+
