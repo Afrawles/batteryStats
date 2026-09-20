@@ -1,7 +1,8 @@
 package main
 
 import (
-	// "encoding/json"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,7 +13,9 @@ import (
 	"strings"
 	"time"
 
-	// "github.com/nats-io/nats.go"
+	"github.com/InfluxCommunity/influxdb3-go/v2/influxdb3"
+	"github.com/joho/godotenv"
+	"github.com/nats-io/nats.go"
 	"github.com/parquet-go/parquet-go"
 )
 
@@ -70,10 +73,47 @@ type Record struct {
 	VoltageP3V float32 `parquet:"Voltage_Actual_P3 [V]"` //Voltage_Actual_P1/P2/P3 [V]
 }
 
+type CycleResult struct {
+	Capacity   float64   `json:"capacity_ah"`
+	Soh        float64   `json:"soh"`
+	Resitance  float32   `json:"resitance"`
+	Confidence string    `json:"confidence"`
+	PackID     string    `json:"pack_id"`
+	Cycle      string    `json:"cycle"`
+	RFlag      bool      `json:"resitance_flag"`
+	IFlag      bool      `json:"imbalance_flag"`
+	Tt         time.Time `json:"timestamp"`
+}
+
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Fatal("failed to load .env")
+	}
+
+	url := os.Getenv("INFLUX_HOST")
+	token := os.Getenv("INFLUX_TOKEN")
+	database := os.Getenv("INFLUX_DATABASE")
+
+	client, err := influxdb3.New(influxdb3.ClientConfig{
+		Host:     url,
+		Token:    token,
+		Database: database,
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer func(client *influxdb3.Client) {
+		err = client.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(client)
+
 	var dataFiles []string
 
-	err := filepath.WalkDir("data", func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir("data", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -89,11 +129,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// nc, err := nats.Connect(nats.DefaultURL)
+	nc, err := nats.Connect(nats.DefaultURL)
 
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	var resistanceHistory = map[string][]float32{}
 	cycleCount := 0
@@ -105,10 +145,8 @@ func main() {
 			fmt.Println(err)
 			continue
 		}
-		defer f.Close()
 
 		reader := parquet.NewGenericReader[Record](f)
-		defer reader.Close()
 
 		b := make([]Record, 1000)
 
@@ -122,6 +160,8 @@ func main() {
 			conf                  string
 			previousTimestamp     time.Time
 		)
+
+		readErr := false
 
 		for {
 			n, err := reader.Read(b)
@@ -182,16 +222,6 @@ func main() {
 
 					cycleRows = append(cycleRows, record)
 
-					// payload, err := json.Marshal(record)
-					// if err != nil {
-					// 	continue
-					// }
-					//
-					// err = nc.Publish("bms.reading", payload)
-					// if err != nil {
-					// 	log.Fatal(err)
-					// }
-
 				}
 
 			}
@@ -201,10 +231,17 @@ func main() {
 			}
 
 			if err != nil {
-				fmt.Println(err)
-				continue
+				readErr = true
+				break
 			}
 
+		}
+
+		reader.Close()
+		f.Close()
+
+		if readErr {
+			continue
 		}
 
 		if !isCharge || !isDischarge {
@@ -227,12 +264,35 @@ func main() {
 
 		cycleCount++
 
-		// TODO: save result to innxlufdb
-		fmt.Println(resistance)
-		fmt.Println(rFlag)
-		fmt.Println(iFlag)
-		fmt.Println(conf)
-		fmt.Println(soh)
+		cr := CycleResult{
+			PackID:     packID,
+			Resitance:  resistance,
+			RFlag:      rFlag,
+			IFlag:      iFlag,
+			Soh:        soh,
+			Confidence: conf,
+			Capacity:   dQN,
+			Cycle:      cycleRows[0].Cycle,
+			Tt:         cycleRows[len(cycleRows)-1].Timestamp,
+		}
+
+		// TODO: handle write failures e.g network instead of killing program
+
+		if err := writeToInfluxDB(client, cr); err != nil {
+			log.Fatal(err)
+		}
+
+		if rFlag || iFlag {
+			payload, err := json.Marshal(cr)
+			if err != nil {
+				continue
+			}
+
+			err = nc.Publish("alerts.battery", payload)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 
 	}
 
@@ -344,4 +404,28 @@ func calcCycleImbalance(rows []Reading) bool {
 	share := getcurentShare(avg)
 
 	return imbalanceFlag(share)
+}
+
+func writeToInfluxDB(client *influxdb3.Client, cr CycleResult) error {
+	point := influxdb3.NewPointWithMeasurement("cycle_result").
+		SetTag("pack_id", cr.PackID).
+		SetField("cycle", cr.Cycle).
+		SetField("capacity_ah", cr.Capacity).
+		SetField("soh", cr.Soh).
+		SetField("resitance_flag", cr.RFlag).
+		SetField("resitance", cr.Resitance).
+		SetField("imbalance_flag", cr.IFlag).
+		SetField("confidence", cr.Confidence).
+		SetTimestamp(cr.Tt)
+
+	points := []*influxdb3.Point{
+		point,
+	}
+
+	if err := client.WritePoints(context.Background(), points); err != nil {
+		return err
+	}
+
+	return nil
+
 }

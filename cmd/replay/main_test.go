@@ -12,14 +12,13 @@ func TestPackCycleReplay(t *testing.T) {
 		rows := []Reading{
 			{
 				SemiCycle: "Capacity check Charge",
-				VoltageV: 14.4,
+				VoltageV:  14.4,
 			},
 			{
 				SemiCycle: "Capacity check Discharge",
-				VoltageV: 13.9,
-				CurrentA: 10.0,
+				VoltageV:  13.9,
+				CurrentA:  10.0,
 			},
-
 		}
 
 		resitance, ok := calcInternalResistance(rows)
@@ -35,18 +34,17 @@ func TestPackCycleReplay(t *testing.T) {
 		}
 	})
 
-
 	t.Run("resistance flag", func(t *testing.T) {
-		cases := []struct{
+		cases := []struct {
 			history []float32
-			latest float32
-			want bool
+			latest  float32
+			want    bool
 		}{
 			{
 
 				history: []float32{0.04, 0.045, 0.05, 0.042},
-				latest: float32(0.06),
-				want: true,
+				latest:  float32(0.06),
+				want:    true,
 			},
 			{
 				history: []float32{0.05, 0.05, 0.05, 0.05},
@@ -68,13 +66,12 @@ func TestPackCycleReplay(t *testing.T) {
 			}
 		}
 
-
 	})
 
 	t.Run("test cycle imbalance calcualtion", func(t *testing.T) {
-		cases := []struct{
+		cases := []struct {
 			reading []Reading
-			want bool
+			want    bool
 		}{
 			{
 				reading: []Reading{
@@ -105,6 +102,5 @@ func TestPackCycleReplay(t *testing.T) {
 			}
 		}
 	})
-
 
 }
