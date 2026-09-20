@@ -14,4 +14,8 @@ used here under its CC BY 4.0 license
 
 **License** [**License details**](https://creativecommons.org/licenses/by/4.0/)
 
+### how dataset was used
 
+```
+    Parquet files → Scoring → InfluxDB → NATS alerts
+```
