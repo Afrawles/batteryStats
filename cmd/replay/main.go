@@ -136,6 +136,7 @@ func main() {
 	}
 
 	var resistanceHistory = map[string][]float32{}
+	var cycleResults []CycleResult
 	cycleCount := 0
 
 	for _, v := range dataFiles {
@@ -276,11 +277,8 @@ func main() {
 			Tt:         cycleRows[len(cycleRows)-1].Timestamp,
 		}
 
-		// TODO: handle write failures e.g network instead of killing program
 
-		if err := writeToInfluxDB(client, cr); err != nil {
-			log.Fatal(err)
-		}
+		cycleResults = append(cycleResults, cr)
 
 		if rFlag || iFlag {
 			payload, err := json.Marshal(cr)
@@ -294,6 +292,11 @@ func main() {
 			}
 		}
 
+	}
+
+	// TODO: handle write failures e.g network instead of killing program
+	if err := writeToInfluxDB(client, cycleResults); err != nil {
+		log.Fatal(err)
 	}
 
 }
@@ -406,25 +409,32 @@ func calcCycleImbalance(rows []Reading) bool {
 	return imbalanceFlag(share)
 }
 
-func writeToInfluxDB(client *influxdb3.Client, cr CycleResult) error {
-	point := influxdb3.NewPointWithMeasurement("cycle_result").
-		SetTag("pack_id", cr.PackID).
-		SetField("cycle", cr.Cycle).
-		SetField("capacity_ah", cr.Capacity).
-		SetField("soh", cr.Soh).
-		SetField("resitance_flag", cr.RFlag).
-		SetField("resitance", cr.Resitance).
-		SetField("imbalance_flag", cr.IFlag).
-		SetField("confidence", cr.Confidence).
-		SetTimestamp(cr.Tt)
 
-	points := []*influxdb3.Point{
-		point,
+// TODO: imporve proper batching
+func writeToInfluxDB(client *influxdb3.Client, results []CycleResult) error {
+	points := make([]*influxdb3.Point, 0, len(results))
+
+	for _, cr := range results {
+		point := influxdb3.NewPointWithMeasurement("cycle_result").
+			SetTag("pack_id", cr.PackID).
+			SetField("cycle", cr.Cycle).
+			SetField("capacity_ah", cr.Capacity).
+			SetField("soh", cr.Soh).
+			SetField("resitance_flag", cr.RFlag).
+			SetField("resitance", cr.Resitance).
+			SetField("imbalance_flag", cr.IFlag).
+			SetField("confidence", cr.Confidence).
+			SetTimestamp(cr.Tt)
+
+		points = append(points, point)
 	}
 
 	if err := client.WritePoints(context.Background(), points); err != nil {
+		fmt.Println(err)
 		return err
 	}
+
+	fmt.Printf("written %d\n", len(results))
 
 	return nil
 
