@@ -136,7 +136,9 @@ func main() {
 	}
 
 	var resistanceHistory = map[string][]float32{}
-	var cycleResults []CycleResult
+
+	const batchSize = 5000
+	cycleResults := make([]CycleResult, 0, batchSize)
 	cycleCount := 0
 
 	for _, v := range dataFiles {
@@ -280,6 +282,14 @@ func main() {
 
 		cycleResults = append(cycleResults, cr)
 
+		if len(cycleResults) >= batchSize {
+			if err := writeToInfluxDB(client, cycleResults); err != nil {
+				log.Fatal(err)
+			}
+
+			cycleResults = cycleResults[:0]
+		}
+
 		if rFlag || iFlag {
 			payload, err := json.Marshal(cr)
 			if err != nil {
@@ -294,9 +304,10 @@ func main() {
 
 	}
 
-	// TODO: handle write failures e.g network instead of killing program
-	if err := writeToInfluxDB(client, cycleResults); err != nil {
-		log.Fatal(err)
+	if len(cycleResults) > 0 {
+		if err := writeToInfluxDB(client, cycleResults); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 }
