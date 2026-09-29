@@ -19,3 +19,15 @@ used here under its CC BY 4.0 license
 ```
     Parquet files → Scoring → InfluxDB → NATS alerts
 ```
+
+### Real EV driving + charging data (Audi e-tron)
+
+One Audi e-tron over one year, driving and charging, from the paper "Analysis and key findings from
+real-world electric vehicle field data" (Joule, 2023), doi:10.17632/7vdkzpnjgj.2. Pack-level signals only
+(current, voltage, SOC, one temperature) — no per-cell values, so the imbalance flag does not apply.
+
+```sh
+pip install numpy h5py pyarrow scipy
+
+python3 scripts/audi_ingest.py "/path/Real-world electric vehicle data driving and charging" -o datasets/sim/audi.parquet
+```
