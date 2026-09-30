@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """Ingest the Audi e-tron field dataset (Joule 2023, doi:10.17632/7vdkzpnjgj.2) into Parquet.
 
